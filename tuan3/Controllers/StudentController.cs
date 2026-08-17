@@ -43,15 +43,26 @@ namespace tuan3.Controllers
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<StudentResponseDto>>>> GetAll([FromQuery] string? keyword)
         {
-            var query = _context.Students.AsQueryable();
+            var query = _context.Students.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 query = query.Where(s => s.FullName.Contains(keyword));
             }
 
-            var students = await query.ToListAsync();
-            var result = students.Select(s => MapToDto(s)).ToList();
+            var result = await query
+                .OrderBy(s => s.StudentID)
+                .Select(s => new StudentResponseDto
+                {
+                    Id = s.StudentID,
+                    Name = s.FullName,
+                    StudentCode = s.StudentCode,
+                    Gender = s.Gender,
+                    Email = s.Email,
+                    ClassID = s.ClassID,
+                    Age = s.BirthDate.HasValue ? DateTime.Today.Year - s.BirthDate.Value.Year : 0
+                })
+                .ToListAsync();
 
             return Ok(ApiResponse<List<StudentResponseDto>>.Ok(result, "Lay danh sach thanh cong"));
         }
@@ -75,22 +86,36 @@ namespace tuan3.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<ApiResponse<StudentResponseDto>>> GetById([FromRoute] int id)
         {
-            var student = await _context.Students.FirstOrDefaultAsync(s => s.StudentID == id);
-            if (student == null)
+            var dto = await _context.Students
+                .AsNoTracking()
+                .Where(s => s.StudentID == id)
+                .Select(s => new StudentResponseDto
+                {
+                    Id = s.StudentID,
+                    Name = s.FullName,
+                    StudentCode = s.StudentCode,
+                    Gender = s.Gender,
+                    Email = s.Email,
+                    ClassID = s.ClassID,
+                    Age = s.BirthDate.HasValue ? DateTime.Today.Year - s.BirthDate.Value.Year : 0
+                })
+                .FirstOrDefaultAsync();
+
+            if (dto == null)
             {
                 throw new NotFoundException("khong tim thay sinh vien");
             }
 
-            return Ok(ApiResponse<StudentResponseDto>.Ok(MapToDto(student), "Lay du lieu thanh cong"));
+            return Ok(ApiResponse<StudentResponseDto>.Ok(dto, "Lay du lieu thanh cong"));
         }
 
         [HttpPost]
         public async Task<ActionResult<ApiResponse<StudentResponseDto>>> Create([FromBody] CreateStudentDto dto)
         {
-            if (string.IsNullOrWhiteSpace(dto.Name))
-            {
-                throw new BadRequestException("ten khong duoc de trong kk");
-            }
+            //if (string.IsNullOrWhiteSpace(dto.Name))
+            //{
+            //    throw new BadRequestException("ten khong duoc de trong kk");
+            //}
 
             var newStudent = new Student();
             newStudent.FullName = dto.Name;
@@ -153,7 +178,7 @@ namespace tuan3.Controllers
         [HttpGet("Page")]
         public async Task<ActionResult<ApiResponse<PagedResult<StudentResponseDto>>>> GetPage([FromQuery] PaginationQuery query)
         {
-            var queryStudent = _context.Students.AsQueryable();
+            var queryStudent = _context.Students.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(query.Keyword))
             {
@@ -163,11 +188,21 @@ namespace tuan3.Controllers
             var totalItems = await queryStudent.CountAsync();
             var skipCount = (query.PageNumber - 1) * query.PageSize;
 
-            var students = await queryStudent.Skip(skipCount)
-                                  .Take(query.PageSize)
-                                  .ToListAsync();
-
-            var items = students.Select(s => MapToDto(s)).ToList();
+            var items = await queryStudent
+                .OrderBy(s => s.StudentID)
+                .Skip(skipCount)
+                .Take(query.PageSize)
+                .Select(s => new StudentResponseDto
+                {
+                    Id = s.StudentID,
+                    Name = s.FullName,
+                    StudentCode = s.StudentCode,
+                    Gender = s.Gender,
+                    Email = s.Email,
+                    ClassID = s.ClassID,
+                    Age = s.BirthDate.HasValue ? DateTime.Today.Year - s.BirthDate.Value.Year : 0
+                })
+                .ToListAsync();
 
             var pageResult = new PagedResult<StudentResponseDto>();
             pageResult.Items = items;
@@ -182,6 +217,7 @@ namespace tuan3.Controllers
         public async Task<ActionResult<ApiResponse<List<GradeDetailDto>>>> GetGradesDetail()
         {
             var grades = await _context.StudentGrades
+                .AsNoTracking()
                 .Include(g => g.Student)
                     .ThenInclude(s => s.Class)
                 .Include(g => g.Subject)
