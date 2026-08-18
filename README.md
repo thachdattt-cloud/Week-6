@@ -84,3 +84,64 @@ Sản phẩm chính của tuần: Student API dùng EF Core + SQL Server.
    - `GET /api/students/include-demo`
    - `GET /api/students/grades-detail`
    - `POST /api/students`, `PUT /api/students/{id}`, `DELETE /api/students/{id}`
+  
+### Ngày 4: EF Core efficient querying
+
+Deliverable: Tối ưu list endpoint Đánh giá: Code review performance
+
+Nội dung
+AsNoTracking: tắt tracking cho query chỉ đọc, tránh EF Core tốn tài nguyên theo dõi thay đổi không cần thiết.
+Projection DTO: dùng Select() chiếu thẳng sang DTO trong query LINQ, tránh load thừa cột không dùng đến.
+Paging performance: đảm bảo thứ tự đúng trong query — Where → OrderBy → Skip → Take → Select — và bắt buộc có OrderBy để phân trang cho kết quả ổn định giữa các lần gọi.
+Query tối ưu: tổng hợp checklist áp dụng cho toàn bộ endpoint đọc danh sách.
+Vấn đề phát hiện khi review code và cách sửa
+
+Rà lại StudentController.cs, phát hiện các endpoint đọc dữ liệu (GetAll, GetById) chưa áp dụng đúng chuẩn tối ưu, dù GetPage đã đúng từ trước:
+
+Endpoint	Trước	Sau
+GetAll	ToListAsync() rồi mới Select map ở C#, không AsNoTracking	Thêm AsNoTracking(), chuyển Select() vào trong query trước ToListAsync(), thêm OrderBy
+GetById	Load full entity rồi map, không AsNoTracking	Dùng Select() projection trực tiếp trong query, thêm AsNoTracking()
+GetPage	Đã đúng chuẩn từ trước	Giữ nguyên
+GetGradesDetail	Dùng Include/ThenInclude, thiếu AsNoTracking	Thêm AsNoTracking() (giữ nguyên Include vì đây là endpoint minh họa cách load quan hệ, không phải projection)
+Checklist tối ưu áp dụng
+AsNoTracking() cho mọi query chỉ đọc (GET).
+Select() projection thay vì load full entity khi chỉ cần đọc dữ liệu.
+Where lọc trước, OrderBy bắt buộc khi có phân trang, Skip/Take sau OrderBy.
+Không gọi ToListAsync() giữa chừng rồi xử lý tiếp bằng LINQ to Objects — giữ toàn bộ logic trong IQueryable để EF Core dịch hết thành 1 câu SQL.
+Các endpoint PUT/DELETE (cần sửa entity) không dùng AsNoTracking(), vì cần EF Core theo dõi thay đổi để SaveChangesAsync() hoạt động đúng.
+Ngày 5: Checkpoint tuần 6
+
+Deliverable: Source + DB script Đánh giá: Checkpoint tuần 6
+
+Nội dung
+Tổng hợp EF Core: rà soát lại toàn bộ kiến thức đã học trong tuần — DbContext/DbSet, Entity class, Migration, Relationship, Include/ThenInclude, Projection, AsNoTracking.
+Hoàn thiện CRUD DB: đảm bảo Create, Update, Delete hoạt động đúng với database thật qua EF Core, không còn sót thao tác nào dùng dữ liệu giả.
+Viết hướng dẫn migration: tài liệu ngắn cho người khác (hoặc chính mình sau này) biết cách setup lại database từ đầu bằng migration.
+Checkpoint tuần 6: tổng kết, chuẩn bị source code + script database để mentor review.
+Hướng dẫn migration (setup database từ đầu)
+
+Dành cho người mới clone project, chưa có database StudentManagement:
+
+Cài SQL Server / LocalDB ((localdb)\MSSQLLocalDB) nếu chưa có.
+Cấu hình connection string trong appsettings.json:
+json
+   "ConnectionStrings": {
+     "defaultConnection": "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=StudentManagement;Integrated Security=True;TrustServerCertificate=True;"
+   }
+Mở Package Manager Console trong Visual Studio, chạy:
+   update-database
+
+Lệnh này tự động tạo database StudentManagement, áp dụng toàn bộ migration trong Migrations/ (tạo bảng Classes, Students, Subjects, StudentGrades), và nạp sẵn seed data mẫu. 4. Chạy project (dotnet run hoặc F5), test qua Swagger.
+
+Nếu cần tạo migration mới (sau khi sửa Entity class):
+
+add-migration <TenMigrationMoTaThayDoi>
+update-database
+
+Nếu cần rollback:
+
+update-database <TenMigrationTruocDo>
+
+hoặc về trạng thái ban đầu:
+
+update-database 0
